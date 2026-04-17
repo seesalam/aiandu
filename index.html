@@ -60,7 +60,11 @@
         }
 
         // Import library Transformers.js (AI Lokal)
-        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers';
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers';
+
+// Matikan penggunaan WebGPU karena sering bermasalah di GitHub Pages
+// Ini akan memaksa AI menggunakan CPU/WASM, sedikit lebih lambat tapi jauh lebih stabil
+env.allowWebGPU = false;
 
         const chatBox = document.getElementById('chat-box');
         const userInput = document.getElementById('user-input');
