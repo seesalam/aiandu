@@ -53,108 +53,87 @@
     </footer>
 
     <script type="module">
-        // Pendaftaran Service Worker agar bisa jalan Offline
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js')
-            .then(() => console.log('Service Worker Terdaftar!'));
-        }
+    // Pendaftaran Service Worker
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(err => console.log('SW Error:', err));
+    }
 
-        // Import library Transformers.js (AI Lokal)
-        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers';
+    // Import library dengan penanganan error lebih baik
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers';
 
-// Matikan penggunaan WebGPU karena sering bermasalah di GitHub Pages
-// Ini akan memaksa AI menggunakan CPU/WASM, sedikit lebih lambat tapi jauh lebih stabil
-env.allowWebGPU = false;
+    // KONFIGURASI PENTING UNTUK OFFLINE & STABILITAS
+    env.allowLocalModels = false; // Memaksa ambil dari CDN jika di IndexedDB belum ada
+    env.useBrowserCache = true;   // Menggunakan cache browser agar tidak download ulang
+    
+    const chatBox = document.getElementById('chat-box');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    const statusModel = document.getElementById('status-model');
 
-        const chatBox = document.getElementById('chat-box');
-        const userInput = document.getElementById('user-input');
-        const sendBtn = document.getElementById('send-btn');
-        const statusModel = document.getElementById('status-model');
+    let generator;
 
-        let generator; // Variabel untuk 'otak' AI
-
-        // --- Langkah 1: Inisialisasi Model AI (Offline Pertama Kali) ---
-        async function initAI() {
-            try {
-                // Kita gunakan model kecil tapi pinter (DistilBERT) untuk draf draf sederhana
-                // Model ini akan tersimpan otomatis di IndexedDB browser.
-                generator = await pipeline('text2text-generation', 'Xenova/LaMini-Flan-T5-78M');
-                
-                statusModel.innerText = "⚡ AI Offline Siap!";
-                statusModel.className = "text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full shadow-inner font-medium";
-                sendBtn.disabled = false; // Aktifkan tombol kirim
-            } catch (error) {
-                statusModel.innerText = "Gagal memuat AI.";
-                console.error(error);
-            }
-        }
-
-        // Jalankan loading model
-        initAI();
-
-        // --- Langkah 2: Logika Kirim & Respon Chat ---
-        async function handleChat() {
-            const prompt = userInput.value.trim();
-            if (!prompt) return;
-
-            // Tampilkan pesan user
-            appendMessage('user', prompt);
-            userInput.value = '';
-            userInput.style.height = 'auto'; // Reset tinggi input
-
-            // Tampilkan status 'berpikir'
-            statusModel.innerText = "Sedang berpikir lokal...";
+    async function initAI() {
+        try {
+            statusModel.innerText = "⏳ Sedang mengunduh otak AI...";
             
-            // JALANKAN AI DI BROWSER (TANPA INTERNET)
-            try {
-                const output = await generator(prompt, { 
-                    max_new_tokens: 150, // Batas panjang jawaban
-                    temperature: 0.7 
-                });
-                
-                // Tampilkan respon AI
-                appendMessage('ai', output[0].generated_text);
-            } catch (err) {
-                appendMessage('ai', 'Maaf, terjadi kesalahan pada proses lokal.');
-                console.error(err);
-            }
+            // Kita gunakan model paling ringan agar sukses di semua perangkat
+            generator = await pipeline('text2text-generation', 'Xenova/LaMini-Flan-T5-78M', {
+                progress_callback: (data) => {
+                    if (data.status === 'progress') {
+                        statusModel.innerText = `⏳ Mengunduh: ${Math.round(data.progress)}%`;
+                    }
+                }
+            });
             
             statusModel.innerText = "⚡ AI Offline Siap!";
+            statusModel.className = "text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full shadow-inner font-medium";
+            sendBtn.disabled = false;
+        } catch (error) {
+            console.error("Detail Error:", error);
+            statusModel.innerText = "❌ Gagal. Coba Refresh Halaman.";
+            statusModel.className = "text-xs bg-red-100 text-red-700 px-3 py-1 rounded-full shadow-inner";
         }
+    }
 
-        // Fungsi bantu untuk menampilkan balon chat
-        function appendMessage(role, text) {
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `flex gap-4 max-w-3xl mx-auto ${role === 'user' ? 'flex-row-reverse' : ''}`;
-            
-            const icon = role === 'user' ? '👤' : '🤖';
-            const iconBg = role === 'user' ? 'bg-slate-200' : 'bg-blue-100 text-blue-600 border border-blue-200';
-            const bgColor = role === 'user' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200';
+    initAI();
 
-            msgDiv.innerHTML = `
-                <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${iconBg}">${icon}</div>
-                <div class="${bgColor} p-4 rounded-2xl shadow-sm text-sm whitespace-pre-wrap">${text}</div>
-            `;
-            chatBox.appendChild(msgDiv);
-            chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll ke bawah
-        }
+    // Fungsi handleChat & appendMessage tetap sama seperti sebelumnya
+    async function handleChat() {
+        const prompt = userInput.value.trim();
+        if (!prompt || !generator) return;
 
-        // Event Listener (Tombol Klik & Tombol Enter)
-        sendBtn.addEventListener('click', handleChat);
+        appendMessage('user', prompt);
+        userInput.value = '';
+        userInput.style.height = 'auto';
+        statusModel.innerText = "💭 Sedang berpikir...";
         
-        userInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { // Shift+Enter untuk baris baru
-                e.preventDefault();
-                handleChat();
-            }
-        });
+        try {
+            const output = await generator(prompt, { max_new_tokens: 100, temperature: 0.7 });
+            appendMessage('ai', output[0].generated_text);
+        } catch (err) {
+            appendMessage('ai', 'Maaf, otak AI sedang lelah. Coba ketik lagi.');
+        }
+        statusModel.innerText = "⚡ AI Offline Siap!";
+    }
 
-        // Auto-expand kotak input saat ngetik panjang
-        userInput.addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = (this.scrollHeight) + 'px';
-        });
+    function appendMessage(role, text) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `flex gap-4 max-w-3xl mx-auto ${role === 'user' ? 'flex-row-reverse' : ''}`;
+        const icon = role === 'user' ? '👤' : '🤖';
+        const iconBg = role === 'user' ? 'bg-slate-200' : 'bg-blue-100 text-blue-600 border border-blue-200';
+        const bgColor = role === 'user' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200';
+        msgDiv.innerHTML = `
+            <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${iconBg}">${icon}</div>
+            <div class="${bgColor} p-4 rounded-2xl shadow-sm text-sm whitespace-pre-wrap">${text}</div>
+        `;
+        chatBox.appendChild(msgDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
 
-    </script>
+    sendBtn.addEventListener('click', handleChat);
+    userInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChat(); }
+    });
+</script>
 </body>
 </html>
