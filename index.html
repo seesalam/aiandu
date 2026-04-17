@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI andU - AI Offline</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar agar area chat rapi */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .chat-container { height: calc(100vh - 160px); }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+    <header class="bg-white border-b p-4 flex justify-between items-center sticky top-0 z-10">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-lg">A</div>
+            <div>
+                <h1 class="font-bold text-xl tracking-tight">AI andU</h1>
+                <p class="text-xs text-slate-500">AI Offline</p>
+            </div>
+        </div>
+        <div id="status-model" class="text-xs bg-slate-100 text-slate-600 px-3 py-1 rounded-full italic shadow-inner">
+            Memuat AI (Sekali)...
+        </div>
+    </header>
+
+    <main id="chat-box" class="chat-container overflow-y-auto p-4 md:p-8 space-y-6">
+        <div class="flex gap-4 max-w-3xl mx-auto">
+            <div class="w-8 h-8 bg-blue-100 rounded-full flex-shrink-0 flex items-center justify-center text-blue-600 border border-blue-200">🤖</div>
+            <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                Halo User! Saya adalah AI yang akan menyimpan secara lokal agar kamu bisa gunakan offline nanti. <br>
+                <b>Catatan:</b> Pertama kali dibuka, saya butuh internet untuk unduh 'otak'. Setelah itu, saya bisa kerja 100% offline.
+            </div>
+        </div>
+    </main>
+
+    <footer class="fixed bottom-0 w-full bg-white border-t p-4 z-10">
+        <div class="max-w-3xl mx-auto flex gap-3">
+            <textarea id="user-input" rows="1" class="w-full p-3 bg-slate-100 border-none rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none" placeholder="Tulis instruksi administrasi di sini..."></textarea>
+            <button id="send-btn" class="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 transition disabled:bg-slate-300" disabled>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                </svg>
+            </button>
+        </div>
+    </footer>
+
+    <script type="module">
+        // Pendaftaran Service Worker agar bisa jalan Offline
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+            .then(() => console.log('Service Worker Terdaftar!'));
+        }
+
+        // Import library Transformers.js (AI Lokal)
+        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers';
+
+        const chatBox = document.getElementById('chat-box');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const statusModel = document.getElementById('status-model');
+
+        let generator; // Variabel untuk 'otak' AI
+
+        // --- Langkah 1: Inisialisasi Model AI (Offline Pertama Kali) ---
+        async function initAI() {
+            try {
+                // Kita gunakan model kecil tapi pinter (DistilBERT) untuk draf draf sederhana
+                // Model ini akan tersimpan otomatis di IndexedDB browser.
+                generator = await pipeline('text2text-generation', 'Xenova/LaMini-Flan-T5-78M');
+                
+                statusModel.innerText = "⚡ AI Offline Siap!";
+                statusModel.className = "text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full shadow-inner font-medium";
+                sendBtn.disabled = false; // Aktifkan tombol kirim
+            } catch (error) {
+                statusModel.innerText = "Gagal memuat AI.";
+                console.error(error);
+            }
+        }
+
+        // Jalankan loading model
+        initAI();
+
+        // --- Langkah 2: Logika Kirim & Respon Chat ---
+        async function handleChat() {
+            const prompt = userInput.value.trim();
+            if (!prompt) return;
+
+            // Tampilkan pesan user
+            appendMessage('user', prompt);
+            userInput.value = '';
+            userInput.style.height = 'auto'; // Reset tinggi input
+
+            // Tampilkan status 'berpikir'
+            statusModel.innerText = "Sedang berpikir lokal...";
+            
+            // JALANKAN AI DI BROWSER (TANPA INTERNET)
+            try {
+                const output = await generator(prompt, { 
+                    max_new_tokens: 150, // Batas panjang jawaban
+                    temperature: 0.7 
+                });
+                
+                // Tampilkan respon AI
+                appendMessage('ai', output[0].generated_text);
+            } catch (err) {
+                appendMessage('ai', 'Maaf, terjadi kesalahan pada proses lokal.');
+                console.error(err);
+            }
+            
+            statusModel.innerText = "⚡ AI Offline Siap!";
+        }
+
+        // Fungsi bantu untuk menampilkan balon chat
+        function appendMessage(role, text) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `flex gap-4 max-w-3xl mx-auto ${role === 'user' ? 'flex-row-reverse' : ''}`;
+            
+            const icon = role === 'user' ? '👤' : '🤖';
+            const iconBg = role === 'user' ? 'bg-slate-200' : 'bg-blue-100 text-blue-600 border border-blue-200';
+            const bgColor = role === 'user' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200';
+
+            msgDiv.innerHTML = `
+                <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${iconBg}">${icon}</div>
+                <div class="${bgColor} p-4 rounded-2xl shadow-sm text-sm whitespace-pre-wrap">${text}</div>
+            `;
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll ke bawah
+        }
+
+        // Event Listener (Tombol Klik & Tombol Enter)
+        sendBtn.addEventListener('click', handleChat);
+        
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { // Shift+Enter untuk baris baru
+                e.preventDefault();
+                handleChat();
+            }
+        });
+
+        // Auto-expand kotak input saat ngetik panjang
+        userInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+
+    </script>
+</body>
+</html>
